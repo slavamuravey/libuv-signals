@@ -40,33 +40,7 @@ typedef enum {
 
 typedef int uv_file;
 
-#define UV_ONCE_INIT PTHREAD_ONCE_INIT
-
-typedef pthread_once_t uv_once_t;
-typedef pthread_t uv_thread_t;
 typedef void (*uv_thread_cb)(void* arg);
-
-typedef enum {
-  UV_THREAD_NO_FLAGS = 0x00,
-  UV_THREAD_HAS_STACK_SIZE = 0x01
-} uv_thread_create_flags;
-
-struct uv_thread_options_s {
-  unsigned int flags;
-  size_t stack_size;
-  /* More fields may be added at any time. */
-};
-
-typedef struct uv_thread_options_s uv_thread_options_t;
-
-int uv_thread_create(uv_thread_t* tid, uv_thread_cb entry, void* arg);
-int uv_thread_create_ex(uv_thread_t* tid,
-                                  const uv_thread_options_t* params,
-                                  uv_thread_cb entry,
-                                  void* arg);
-int uv_thread_join(uv_thread_t *tid);
-
-void uv_once(uv_once_t* guard, void (*callback)(void));
 
 typedef void* (*uv_malloc_func)(size_t size);
 typedef void* (*uv_realloc_func)(void* ptr, size_t size);

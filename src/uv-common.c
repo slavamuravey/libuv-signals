@@ -22,7 +22,11 @@ void uv_unref(uv_handle_t* handle) {
     return;
   }                       
   
-  handle->flags &= ~UV_HANDLE_REF;                                             
+  handle->flags &= ~UV_HANDLE_REF;        
+
+  if (handle->flags & UV_HANDLE_CLOSING) {
+    return;
+  }                                     
   
   if (handle->flags & UV_HANDLE_ACTIVE) {
     handle->loop->active_handles--;

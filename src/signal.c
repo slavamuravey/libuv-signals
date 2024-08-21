@@ -27,8 +27,6 @@ static int uv__signal_compare(uv_signal_t* w1, uv_signal_t* w2);
 static void uv__signal_stop(uv_signal_t* handle);
 static void uv__signal_unregister_handler(int signum);
 
-
-static uv_once_t uv__signal_global_init_guard = UV_ONCE_INIT;
 static struct uv__signal_tree_s uv__signal_tree = RB_INITIALIZER(uv__signal_tree);
 static int uv__signal_lock_pipefd[2] = { -1, -1 };
 
@@ -37,24 +35,11 @@ RB_GENERATE_STATIC(uv__signal_tree_s, uv_signal_s, tree_entry, uv__signal_compar
 static void uv__signal_global_reinit(void);
 
 static void uv__signal_global_init(void) {
-  if (uv__signal_lock_pipefd[0] == -1) {
-    if (pthread_atfork(NULL, NULL, &uv__signal_global_reinit)) {
-      abort();
-    }
-  }
-
   uv__signal_global_reinit();
 }
 
 
 void uv__signal_cleanup(void) {
-  /* We can only use signal-safe functions here.
-   * That includes read/write and close, fortunately.
-   * We do all of this directly here instead of resetting
-   * uv__signal_global_init_guard because
-   * uv__signal_global_once_init is only called from uv_loop_init
-   * and this needs to function in existing loops.
-   */
   if (uv__signal_lock_pipefd[0] != -1) {
     uv__close(uv__signal_lock_pipefd[0]);
     uv__signal_lock_pipefd[0] = -1;
@@ -81,7 +66,7 @@ static void uv__signal_global_reinit(void) {
 
 
 void uv__signal_global_once_init(void) {
-  uv_once(&uv__signal_global_init_guard, uv__signal_global_init);
+  uv__signal_global_init();
 }
 
 

@@ -1,28 +1,3 @@
-/*-
- * Copyright 2002 Niels Provos <provos@citi.umich.edu>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 #ifndef  UV_TREE_H_
 #define  UV_TREE_H_
 
@@ -56,26 +31,14 @@ struct name {                                                                 \
 #define RB_INITIALIZER(root)                                                  \
   { NULL }
 
-#define RB_INIT(root) do {                                                    \
-  (root)->rbh_root = NULL;                                                    \
-} while (/*CONSTCOND*/ 0)
-
 #define RB_BLACK  0
 #define RB_RED    1
-#define RB_ENTRY(type)                                                        \
-struct {                                                                      \
-  struct type *rbe_left;        /* left element */                            \
-  struct type *rbe_right;       /* right element */                           \
-  struct type *rbe_parent;      /* parent element */                          \
-  int rbe_color;                /* node color */                              \
-}
 
 #define RB_LEFT(elm, field)     (elm)->field.rbe_left
 #define RB_RIGHT(elm, field)    (elm)->field.rbe_right
 #define RB_PARENT(elm, field)   (elm)->field.rbe_parent
 #define RB_COLOR(elm, field)    (elm)->field.rbe_color
 #define RB_ROOT(head)           (head)->rbh_root
-#define RB_EMPTY(head)          (RB_ROOT(head) == NULL)
 
 #define RB_SET(elm, parent, field) do {                                       \
   RB_PARENT(elm, field) = parent;                                             \
@@ -132,28 +95,9 @@ struct {                                                                      \
     RB_AUGMENT(RB_PARENT(tmp, field));                                        \
 } while (/*CONSTCOND*/ 0)
 
-/* Generates prototypes and inline functions */
-#define  RB_PROTOTYPE(name, type, field, cmp)                                 \
-  RB_PROTOTYPE_INTERNAL(name, type, field, cmp,)
-#define  RB_PROTOTYPE_STATIC(name, type, field, cmp)                          \
-  RB_PROTOTYPE_INTERNAL(name, type, field, cmp, UV__UNUSED static)
-#define RB_PROTOTYPE_INTERNAL(name, type, field, cmp, attr)                   \
-attr void name##_RB_INSERT_COLOR(struct name *, struct type *);               \
-attr void name##_RB_REMOVE_COLOR(struct name *, struct type *, struct type *);\
-attr struct type *name##_RB_REMOVE(struct name *, struct type *);             \
-attr struct type *name##_RB_INSERT(struct name *, struct type *);             \
-attr struct type *name##_RB_FIND(struct name *, struct type *);               \
-attr struct type *name##_RB_NFIND(struct name *, struct type *);              \
-attr struct type *name##_RB_NEXT(struct type *);                              \
-attr struct type *name##_RB_PREV(struct type *);                              \
-attr struct type *name##_RB_MINMAX(struct name *, int);                       \
-                                                                              \
-
 /* Main rb operation.
  * Moves node close to the key of elm to top
  */
-#define  RB_GENERATE(name, type, field, cmp)                                  \
-  RB_GENERATE_INTERNAL(name, type, field, cmp,)
 #define  RB_GENERATE_STATIC(name, type, field, cmp)                           \
   RB_GENERATE_INTERNAL(name, type, field, cmp, UV__UNUSED static)
 #define RB_GENERATE_INTERNAL(name, type, field, cmp, attr)                    \
@@ -378,24 +322,6 @@ name##_RB_INSERT(struct name *head, struct type *elm)                         \
   return (NULL);                                                              \
 }                                                                             \
                                                                               \
-/* Finds the node with the same key as elm */                                 \
-attr struct type *                                                            \
-name##_RB_FIND(struct name *head, struct type *elm)                           \
-{                                                                             \
-  struct type *tmp = RB_ROOT(head);                                           \
-  int comp;                                                                   \
-  while (tmp) {                                                               \
-    comp = cmp(elm, tmp);                                                     \
-    if (comp < 0)                                                             \
-      tmp = RB_LEFT(tmp, field);                                              \
-    else if (comp > 0)                                                        \
-      tmp = RB_RIGHT(tmp, field);                                             \
-    else                                                                      \
-      return (tmp);                                                           \
-  }                                                                           \
-  return (NULL);                                                              \
-}                                                                             \
-                                                                              \
 /* Finds the first node greater than or equal to the search key */            \
 attr struct type *                                                            \
 name##_RB_NFIND(struct name *head, struct type *elm)                          \
@@ -437,85 +363,11 @@ name##_RB_NEXT(struct type *elm)                                              \
     }                                                                         \
   }                                                                           \
   return (elm);                                                               \
-}                                                                             \
-                                                                              \
-/* ARGSUSED */                                                                \
-attr struct type *                                                            \
-name##_RB_PREV(struct type *elm)                                              \
-{                                                                             \
-  if (RB_LEFT(elm, field)) {                                                  \
-    elm = RB_LEFT(elm, field);                                                \
-    while (RB_RIGHT(elm, field))                                              \
-      elm = RB_RIGHT(elm, field);                                             \
-  } else {                                                                    \
-    if (RB_PARENT(elm, field) &&                                              \
-        (elm == RB_RIGHT(RB_PARENT(elm, field), field)))                      \
-      elm = RB_PARENT(elm, field);                                            \
-    else {                                                                    \
-      while (RB_PARENT(elm, field) &&                                         \
-          (elm == RB_LEFT(RB_PARENT(elm, field), field)))                     \
-        elm = RB_PARENT(elm, field);                                          \
-      elm = RB_PARENT(elm, field);                                            \
-    }                                                                         \
-  }                                                                           \
-  return (elm);                                                               \
-}                                                                             \
-                                                                              \
-attr struct type *                                                            \
-name##_RB_MINMAX(struct name *head, int val)                                  \
-{                                                                             \
-  struct type *tmp = RB_ROOT(head);                                           \
-  struct type *parent = NULL;                                                 \
-  while (tmp) {                                                               \
-    parent = tmp;                                                             \
-    if (val < 0)                                                              \
-      tmp = RB_LEFT(tmp, field);                                              \
-    else                                                                      \
-      tmp = RB_RIGHT(tmp, field);                                             \
-  }                                                                           \
-  return (parent);                                                            \
 }
-
-#define RB_NEGINF   -1
-#define RB_INF      1
 
 #define RB_INSERT(name, x, y)   name##_RB_INSERT(x, y)
 #define RB_REMOVE(name, x, y)   name##_RB_REMOVE(x, y)
-#define RB_FIND(name, x, y)     name##_RB_FIND(x, y)
 #define RB_NFIND(name, x, y)    name##_RB_NFIND(x, y)
 #define RB_NEXT(name, x, y)     name##_RB_NEXT(y)
-#define RB_PREV(name, x, y)     name##_RB_PREV(y)
-#define RB_MIN(name, x)         name##_RB_MINMAX(x, RB_NEGINF)
-#define RB_MAX(name, x)         name##_RB_MINMAX(x, RB_INF)
-
-#define RB_FOREACH(x, name, head)                                             \
-  for ((x) = RB_MIN(name, head);                                              \
-       (x) != NULL;                                                           \
-       (x) = name##_RB_NEXT(x))
-
-#define RB_FOREACH_FROM(x, name, y)                                           \
-  for ((x) = (y);                                                             \
-      ((x) != NULL) && ((y) = name##_RB_NEXT(x), (x) != NULL);                \
-       (x) = (y))
-
-#define RB_FOREACH_SAFE(x, name, head, y)                                     \
-  for ((x) = RB_MIN(name, head);                                              \
-      ((x) != NULL) && ((y) = name##_RB_NEXT(x), (x) != NULL);                \
-       (x) = (y))
-
-#define RB_FOREACH_REVERSE(x, name, head)                                     \
-  for ((x) = RB_MAX(name, head);                                              \
-       (x) != NULL;                                                           \
-       (x) = name##_RB_PREV(x))
-
-#define RB_FOREACH_REVERSE_FROM(x, name, y)                                   \
-  for ((x) = (y);                                                             \
-      ((x) != NULL) && ((y) = name##_RB_PREV(x), (x) != NULL);                \
-       (x) = (y))
-
-#define RB_FOREACH_REVERSE_SAFE(x, name, head, y)                             \
-  for ((x) = RB_MAX(name, head);                                              \
-      ((x) != NULL) && ((y) = name##_RB_PREV(x), (x) != NULL);                \
-       (x) = (y))
 
 #endif  /* UV_TREE_H_ */

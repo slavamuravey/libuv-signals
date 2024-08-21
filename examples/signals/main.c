@@ -12,55 +12,44 @@ uv_loop_t* create_loop()
     return loop;
 }
 
-void signal_handler(uv_signal_t *handle, int signum)
+void signal_handler_usr1(uv_signal_t *handle, int signum)
 {
     printf("Signal received: %d\n", signum);
     uv_signal_stop(handle);
 }
 
-// two signal handlers in one loop
-void thread1_worker(void *userp)
+void signal_handler_int1(uv_signal_t *handle, int signum)
 {
-    uv_loop_t *loop1 = create_loop();
-
-    uv_signal_t sig1a, sig1b;
-    uv_signal_init(loop1, &sig1a);
-    uv_signal_start(&sig1a, signal_handler, SIGUSR1);
-
-    uv_signal_init(loop1, &sig1b);
-    uv_signal_start(&sig1b, signal_handler, SIGUSR1);
-
-    uv_run(loop1, UV_RUN_DEFAULT);
+    printf("SIGINT 1 Signal received: %d\n", signum);
 }
 
-// two signal handlers, each in its own loop
-void thread2_worker(void *userp)
+void signal_handler_int2(uv_signal_t *handle, int signum)
 {
-    uv_loop_t *loop2 = create_loop();
-    uv_loop_t *loop3 = create_loop();
-
-    uv_signal_t sig2;
-    uv_signal_init(loop2, &sig2);
-    uv_signal_start(&sig2, signal_handler, SIGUSR1);
-
-    uv_signal_t sig3;
-    uv_signal_init(loop3, &sig3);
-    uv_signal_start(&sig3, signal_handler, SIGUSR1);
-
-    while (uv_run(loop2, UV_RUN_NOWAIT) || uv_run(loop3, UV_RUN_NOWAIT)) {
-    }
+    printf("SIGINT 2 Signal received: %d\n", signum);
 }
 
 int main()
 {
     printf("PID %d\n", getpid());
 
-    uv_thread_t thread1, thread2;
+    uv_loop_t *loop1 = create_loop();
 
-    uv_thread_create(&thread1, thread1_worker, 0);
-    uv_thread_create(&thread2, thread2_worker, 0);
+    uv_signal_t sig1, sig2, sig3, sig4;
+    uv_signal_init(loop1, &sig1);
+    uv_signal_start(&sig1, signal_handler_usr1, SIGUSR1);
 
-    uv_thread_join(&thread1);
-    uv_thread_join(&thread2);
+    uv_signal_init(loop1, &sig2);
+    uv_signal_start(&sig2, signal_handler_usr1, SIGUSR1);
+
+    uv_signal_init(loop1, &sig3);
+    uv_signal_start(&sig3, signal_handler_int1, SIGINT);
+    uv_unref((uv_handle_t *)&sig3);
+
+    uv_signal_init(loop1, &sig4);
+    uv_signal_start(&sig4, signal_handler_int2, SIGINT);
+    uv_unref((uv_handle_t *)&sig4);
+
+    uv_run(loop1, UV_RUN_DEFAULT);
+    
     return 0;
 }
