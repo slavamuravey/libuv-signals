@@ -6,7 +6,7 @@ add_compile_definitions(_GNU_SOURCE)
 set(
     UV_SOURCES
     
-    src/core.c  src/linux.c  src/loop.c  src/signal.c  src/uv-common.c src/pipe.c
+    src/core.c  src/linux.c  src/loop.c  src/signal.c  src/uv-common.c src/pipe.c src/process.c
 )
 
 add_executable(

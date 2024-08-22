@@ -41,4 +41,6 @@ int uv__make_pipe(int fds[2], int flags);
 
 void uv__signal_global_once_init(void);
 
+int uv__process_init(uv_loop_t* loop);
+
 #endif

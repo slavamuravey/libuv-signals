@@ -20,9 +20,14 @@ int uv_loop_init(uv_loop_t* loop) {
   }
 
   uv__signal_global_once_init();
+  err = uv__process_init(loop);
+  if (err) {
+    goto fail_signal_init;
+  }
 
   return 0;
 
+fail_signal_init:
 fail_platform_init:
   uv__free(loop->watchers);
   loop->nwatchers = 0;

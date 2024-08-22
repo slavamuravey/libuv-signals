@@ -81,25 +81,6 @@ typedef struct uv_signal_s uv_signal_t;
 
 typedef void (*uv_signal_cb)(uv_signal_t* handle, int signum);
 
-struct uv_loop_s {
-  /* Loop reference counting. */
-  unsigned int active_handles;
-  unsigned long flags;                                                      
-  int backend_fd;
-  struct uv__queue watcher_queue;
-  uv__io_t** watchers;
-  unsigned int nwatchers;
-  unsigned int nfds;
-  int signal_pipefd[2];
-  uv__io_t signal_io_watcher;
-};
-
-/* The abstract base class of all handles. */
-struct uv_handle_s {
-  uv_loop_t* loop;                                                            
-  unsigned int flags;                                                    
-};
-
 struct uv_signal_s {
   uv_loop_t* loop;
   unsigned int flags;
@@ -116,6 +97,26 @@ struct uv_signal_s {
   /* Use two counters here so we don have to fiddle with atomics. */          
   unsigned int caught_signals;                                                
   unsigned int dispatched_signals;
+};
+
+struct uv_loop_s {
+  /* Loop reference counting. */
+  unsigned int active_handles;
+  unsigned long flags;                                                      
+  int backend_fd;
+  struct uv__queue watcher_queue;
+  uv__io_t** watchers;
+  unsigned int nwatchers;
+  unsigned int nfds;
+  int signal_pipefd[2];
+  uv__io_t signal_io_watcher;
+  uv_signal_t child_watcher;
+};
+
+/* The abstract base class of all handles. */
+struct uv_handle_s {
+  uv_loop_t* loop;                                                            
+  unsigned int flags;                                                    
 };
 
 int uv_signal_init(uv_loop_t* loop, uv_signal_t* handle);
