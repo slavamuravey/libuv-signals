@@ -12,6 +12,9 @@
 # define SA_RESTART 0
 #endif
 
+#define RB_BLACK 0
+#define RB_RED   1
+
 typedef struct {
   uv_signal_t* handle;
   int signum;
@@ -40,14 +43,14 @@ static void uv__signal_tree_s_RB_INSERT_COLOR(
 ) {
   struct uv_signal_s *parent, *gparent, *tmp;
   
-  while ((parent = elm->tree_entry.rbe_parent) != NULL && parent->tree_entry.rbe_color == 1) {
+  while ((parent = elm->tree_entry.rbe_parent) != NULL && parent->tree_entry.rbe_color == RB_RED) {
     gparent = parent->tree_entry.rbe_parent;
     if (parent == gparent->tree_entry.rbe_left) {
       tmp = gparent->tree_entry.rbe_right;
-      if (tmp && tmp->tree_entry.rbe_color == 1) {
-        tmp->tree_entry.rbe_color = 0;
-        parent->tree_entry.rbe_color = 0;
-        gparent->tree_entry.rbe_color = 1;
+      if (tmp && tmp->tree_entry.rbe_color == RB_RED) {
+        tmp->tree_entry.rbe_color = RB_BLACK;
+        parent->tree_entry.rbe_color = RB_BLACK;
+        gparent->tree_entry.rbe_color = RB_RED;
         elm = gparent;
         
         continue;
@@ -74,8 +77,8 @@ static void uv__signal_tree_s_RB_INSERT_COLOR(
         elm = tmp;
       }
 
-      parent->tree_entry.rbe_color = 0;
-      gparent->tree_entry.rbe_color = 1;
+      parent->tree_entry.rbe_color = RB_BLACK;
+      gparent->tree_entry.rbe_color = RB_RED;
       
       tmp = gparent->tree_entry.rbe_left;
       if ((gparent->tree_entry.rbe_left = tmp->tree_entry.rbe_right) != NULL) {
@@ -94,10 +97,10 @@ static void uv__signal_tree_s_RB_INSERT_COLOR(
       gparent->tree_entry.rbe_parent = tmp;
     } else {
       tmp = gparent->tree_entry.rbe_left;
-      if (tmp && tmp->tree_entry.rbe_color == 1) {
-        tmp->tree_entry.rbe_color = 0;
-        parent->tree_entry.rbe_color = 0;
-        gparent->tree_entry.rbe_color = 1;
+      if (tmp && tmp->tree_entry.rbe_color == RB_RED) {
+        tmp->tree_entry.rbe_color = RB_BLACK;
+        parent->tree_entry.rbe_color = RB_BLACK;
+        gparent->tree_entry.rbe_color = RB_RED;
         elm = gparent;
         
         continue;
@@ -123,8 +126,8 @@ static void uv__signal_tree_s_RB_INSERT_COLOR(
         parent = elm;
         elm = tmp;
       }
-      parent->tree_entry.rbe_color = 0;
-      gparent->tree_entry.rbe_color = 1;
+      parent->tree_entry.rbe_color = RB_BLACK;
+      gparent->tree_entry.rbe_color = RB_RED;
       tmp = gparent->tree_entry.rbe_right;
       if ((gparent->tree_entry.rbe_right = tmp->tree_entry.rbe_left) != NULL) {
         tmp->tree_entry.rbe_left->tree_entry.rbe_parent = gparent;
@@ -142,7 +145,7 @@ static void uv__signal_tree_s_RB_INSERT_COLOR(
       gparent->tree_entry.rbe_parent = tmp;
     }
   }
-  head->rbh_root->tree_entry.rbe_color = 0;
+  head->rbh_root->tree_entry.rbe_color = RB_BLACK;
 }
 
 
@@ -152,12 +155,12 @@ static void uv__signal_tree_s_RB_REMOVE_COLOR(
 ) {
   struct uv_signal_s* tmp;
 
-  while ((elm == NULL || elm->tree_entry.rbe_color == 0) && elm != head->rbh_root) {
+  while ((elm == NULL || elm->tree_entry.rbe_color == RB_BLACK) && elm != head->rbh_root) {
     if (parent->tree_entry.rbe_left == elm) {
       tmp = parent->tree_entry.rbe_right;
-      if (tmp->tree_entry.rbe_color == 1) {
-        tmp->tree_entry.rbe_color = 0;
-        parent->tree_entry.rbe_color = 1;
+      if (tmp->tree_entry.rbe_color == RB_RED) {
+        tmp->tree_entry.rbe_color = RB_BLACK;
+        parent->tree_entry.rbe_color = RB_RED;
         tmp = parent->tree_entry.rbe_right;
         if ((parent->tree_entry.rbe_right = tmp->tree_entry.rbe_left) != NULL) {
           tmp->tree_entry.rbe_left->tree_entry.rbe_parent = parent;
@@ -175,19 +178,19 @@ static void uv__signal_tree_s_RB_REMOVE_COLOR(
         parent->tree_entry.rbe_parent = tmp;
         tmp = parent->tree_entry.rbe_right;
       }
-      if ((tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == 0) &&
-          (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == 0)) {
-        tmp->tree_entry.rbe_color = 1;
+      if ((tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == RB_BLACK) &&
+          (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == RB_BLACK)) {
+        tmp->tree_entry.rbe_color = RB_RED;
         elm = parent;
         parent = elm->tree_entry.rbe_parent;
       } else {
-        if (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == 0) {
+        if (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == RB_BLACK) {
           struct uv_signal_s* oleft;
           
           if ((oleft = tmp->tree_entry.rbe_left) != NULL) {
-            oleft->tree_entry.rbe_color = 0;
+            oleft->tree_entry.rbe_color = RB_BLACK;
           }
-          tmp->tree_entry.rbe_color = 1;
+          tmp->tree_entry.rbe_color = RB_RED;
           oleft = tmp->tree_entry.rbe_left;
           if ((tmp->tree_entry.rbe_left = oleft->tree_entry.rbe_right) != NULL) {
             oleft->tree_entry.rbe_right->tree_entry.rbe_parent = tmp;
@@ -206,9 +209,9 @@ static void uv__signal_tree_s_RB_REMOVE_COLOR(
           tmp = parent->tree_entry.rbe_right;
         }
         tmp->tree_entry.rbe_color = parent->tree_entry.rbe_color;
-        parent->tree_entry.rbe_color = 0;
+        parent->tree_entry.rbe_color = RB_BLACK;
         if (tmp->tree_entry.rbe_right) {
-          (tmp->tree_entry.rbe_right)->tree_entry.rbe_color = 0;
+          (tmp->tree_entry.rbe_right)->tree_entry.rbe_color = RB_BLACK;
         }
         tmp = parent->tree_entry.rbe_right;
         if ((parent->tree_entry.rbe_right = tmp->tree_entry.rbe_left) != NULL) {
@@ -231,9 +234,9 @@ static void uv__signal_tree_s_RB_REMOVE_COLOR(
       }
     } else {
       tmp = parent->tree_entry.rbe_left;
-      if (tmp->tree_entry.rbe_color == 1) {
-        tmp->tree_entry.rbe_color = 0;
-        parent->tree_entry.rbe_color = 1;
+      if (tmp->tree_entry.rbe_color == RB_RED) {
+        tmp->tree_entry.rbe_color = RB_BLACK;
+        parent->tree_entry.rbe_color = RB_RED;
         tmp = parent->tree_entry.rbe_left;
         if ((parent->tree_entry.rbe_left = tmp->tree_entry.rbe_right) != NULL) {
           tmp->tree_entry.rbe_right->tree_entry.rbe_parent = parent;
@@ -252,19 +255,19 @@ static void uv__signal_tree_s_RB_REMOVE_COLOR(
         parent->tree_entry.rbe_parent = tmp;
         tmp = parent->tree_entry.rbe_left;
       }
-      if ((tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == 0) &&
-          (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == 0)) {
-        tmp->tree_entry.rbe_color = 1;
+      if ((tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == RB_BLACK) &&
+          (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == RB_BLACK)) {
+        tmp->tree_entry.rbe_color = RB_RED;
         elm = parent;
         parent = elm->tree_entry.rbe_parent;
       } else {
-        if (tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == 0) {
+        if (tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == RB_BLACK) {
           struct uv_signal_s* oright;
           
           if ((oright = tmp->tree_entry.rbe_right) != NULL) {
-            oright->tree_entry.rbe_color = 0;
+            oright->tree_entry.rbe_color = RB_BLACK;
           }
-          tmp->tree_entry.rbe_color = 1;
+          tmp->tree_entry.rbe_color = RB_RED;
           oright = tmp->tree_entry.rbe_right;
           if ((tmp->tree_entry.rbe_right = oright->tree_entry.rbe_left) != NULL) {
             oright->tree_entry.rbe_left->tree_entry.rbe_parent = tmp;
@@ -283,9 +286,9 @@ static void uv__signal_tree_s_RB_REMOVE_COLOR(
           tmp = parent->tree_entry.rbe_left;
         }
         tmp->tree_entry.rbe_color = parent->tree_entry.rbe_color;
-        parent->tree_entry.rbe_color = 0;
+        parent->tree_entry.rbe_color = RB_BLACK;
         if (tmp->tree_entry.rbe_left) {
-          tmp->tree_entry.rbe_left->tree_entry.rbe_color = 0;
+          tmp->tree_entry.rbe_left->tree_entry.rbe_color = RB_BLACK;
         }
         tmp = parent->tree_entry.rbe_left;
         if ((parent->tree_entry.rbe_left = tmp->tree_entry.rbe_right) != NULL) {
@@ -310,7 +313,7 @@ static void uv__signal_tree_s_RB_REMOVE_COLOR(
   }
   
   if (elm) {
-    elm->tree_entry.rbe_color = 0;
+    elm->tree_entry.rbe_color = RB_BLACK;
   }
 }
 
@@ -348,7 +351,9 @@ static struct uv_signal_s* uv__signal_tree_s_RB_REMOVE(
     } else {
       head->rbh_root = child;
     }
-    if (elm->tree_entry.rbe_parent == old) parent = elm;
+    if (elm->tree_entry.rbe_parent == old) {
+      parent = elm;
+    }
     elm->tree_entry = old->tree_entry;
     if (old->tree_entry.rbe_parent) {
       if (old->tree_entry.rbe_parent->tree_entry.rbe_left == old) {
@@ -415,7 +420,7 @@ static struct uv_signal_s* uv__signal_tree_s_RB_INSERT(
   }
   elm->tree_entry.rbe_parent = parent;
   elm->tree_entry.rbe_left = elm->tree_entry.rbe_right = NULL;
-  elm->tree_entry.rbe_color = 1;
+  elm->tree_entry.rbe_color = RB_RED;
   if (parent != NULL) {
     if (comp < 0) {
       parent->tree_entry.rbe_left = elm;
