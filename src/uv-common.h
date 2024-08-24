@@ -1,6 +1,5 @@
 #include "uv.h"
 #include "queue.h"
-#include "tree.h"
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 

@@ -17,7 +17,10 @@ typedef struct {
   int signum;
 } uv__signal_msg_t;
 
-RB_HEAD(uv__signal_tree_s, uv_signal_s);
+
+struct uv__signal_tree_s {
+  struct uv_signal_s *rbh_root; /* root of the tree */
+};
 
 
 static int uv__signal_unlock(void);
@@ -27,10 +30,454 @@ static int uv__signal_compare(uv_signal_t* w1, uv_signal_t* w2);
 static void uv__signal_stop(uv_signal_t* handle);
 static void uv__signal_unregister_handler(int signum);
 
-static struct uv__signal_tree_s uv__signal_tree = RB_INITIALIZER(uv__signal_tree);
+static struct uv__signal_tree_s uv__signal_tree = { NULL };
 static int uv__signal_lock_pipefd[2] = { -1, -1 };
 
-RB_GENERATE_STATIC(uv__signal_tree_s, uv_signal_s, tree_entry, uv__signal_compare)
+
+static void uv__signal_tree_s_RB_INSERT_COLOR(
+  struct uv__signal_tree_s* head, 
+  struct uv_signal_s* elm
+) {
+  struct uv_signal_s *parent, *gparent, *tmp;
+  
+  while ((parent = elm->tree_entry.rbe_parent) != NULL && parent->tree_entry.rbe_color == 1) {
+    gparent = parent->tree_entry.rbe_parent;
+    if (parent == gparent->tree_entry.rbe_left) {
+      tmp = gparent->tree_entry.rbe_right;
+      if (tmp && tmp->tree_entry.rbe_color == 1) {
+        tmp->tree_entry.rbe_color = 0;
+        parent->tree_entry.rbe_color = 0;
+        gparent->tree_entry.rbe_color = 1;
+        elm = gparent;
+        
+        continue;
+      }
+      if (parent->tree_entry.rbe_right == elm) {
+        tmp = parent->tree_entry.rbe_right;
+        if ((parent->tree_entry.rbe_right = tmp->tree_entry.rbe_left) != NULL) {
+          tmp->tree_entry.rbe_left->tree_entry.rbe_parent = parent;
+        }
+
+        if ((tmp->tree_entry.rbe_parent = parent->tree_entry.rbe_parent) != NULL) {
+          if (parent == parent->tree_entry.rbe_parent->tree_entry.rbe_left) {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_left = tmp;
+          } else {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_right = tmp;
+          }
+        } else {
+          head->rbh_root = tmp;
+        }
+        tmp->tree_entry.rbe_left = parent;
+        parent->tree_entry.rbe_parent = tmp;
+        tmp = parent;
+        parent = elm;
+        elm = tmp;
+      }
+
+      parent->tree_entry.rbe_color = 0;
+      gparent->tree_entry.rbe_color = 1;
+      
+      tmp = gparent->tree_entry.rbe_left;
+      if ((gparent->tree_entry.rbe_left = tmp->tree_entry.rbe_right) != NULL) {
+        tmp->tree_entry.rbe_right->tree_entry.rbe_parent = gparent;
+      }
+      if ((tmp->tree_entry.rbe_parent = gparent->tree_entry.rbe_parent) != NULL) {
+        if (gparent == gparent->tree_entry.rbe_parent->tree_entry.rbe_left) {
+          gparent->tree_entry.rbe_parent->tree_entry.rbe_left = tmp;
+        } else {
+          gparent->tree_entry.rbe_parent->tree_entry.rbe_right = tmp;
+        }
+      } else {
+        head->rbh_root = tmp;
+      }
+      tmp->tree_entry.rbe_right = gparent;
+      gparent->tree_entry.rbe_parent = tmp;
+    } else {
+      tmp = gparent->tree_entry.rbe_left;
+      if (tmp && tmp->tree_entry.rbe_color == 1) {
+        tmp->tree_entry.rbe_color = 0;
+        parent->tree_entry.rbe_color = 0;
+        gparent->tree_entry.rbe_color = 1;
+        elm = gparent;
+        
+        continue;
+      }
+      if (parent->tree_entry.rbe_left == elm) {
+        tmp = parent->tree_entry.rbe_left;
+        if ((parent->tree_entry.rbe_left = tmp->tree_entry.rbe_right) != NULL) {
+          tmp->tree_entry.rbe_right->tree_entry.rbe_parent = parent;
+        }
+
+        if ((tmp->tree_entry.rbe_parent = parent->tree_entry.rbe_parent) != NULL) {
+          if (parent == parent->tree_entry.rbe_parent->tree_entry.rbe_left) {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_left = tmp;
+          } else {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_right = tmp;
+          }
+        } else {
+          head->rbh_root = tmp;
+        }
+        tmp->tree_entry.rbe_right = parent;
+        parent->tree_entry.rbe_parent = tmp;
+        tmp = parent;
+        parent = elm;
+        elm = tmp;
+      }
+      parent->tree_entry.rbe_color = 0;
+      gparent->tree_entry.rbe_color = 1;
+      tmp = gparent->tree_entry.rbe_right;
+      if ((gparent->tree_entry.rbe_right = tmp->tree_entry.rbe_left) != NULL) {
+        tmp->tree_entry.rbe_left->tree_entry.rbe_parent = gparent;
+      }
+      if ((tmp->tree_entry.rbe_parent = gparent->tree_entry.rbe_parent) != NULL) {
+        if (gparent == gparent->tree_entry.rbe_parent->tree_entry.rbe_left) {
+          gparent->tree_entry.rbe_parent->tree_entry.rbe_left = tmp;
+        } else {
+          gparent->tree_entry.rbe_parent->tree_entry.rbe_right = tmp;
+        }
+      } else {
+        head->rbh_root = tmp;
+      }
+      tmp->tree_entry.rbe_left = gparent;
+      gparent->tree_entry.rbe_parent = tmp;
+    }
+  }
+  head->rbh_root->tree_entry.rbe_color = 0;
+}
+
+
+static void uv__signal_tree_s_RB_REMOVE_COLOR(
+  struct uv__signal_tree_s* head, struct uv_signal_s* parent,
+  struct uv_signal_s* elm
+) {
+  struct uv_signal_s* tmp;
+
+  while ((elm == NULL || elm->tree_entry.rbe_color == 0) && elm != head->rbh_root) {
+    if (parent->tree_entry.rbe_left == elm) {
+      tmp = parent->tree_entry.rbe_right;
+      if (tmp->tree_entry.rbe_color == 1) {
+        tmp->tree_entry.rbe_color = 0;
+        parent->tree_entry.rbe_color = 1;
+        tmp = parent->tree_entry.rbe_right;
+        if ((parent->tree_entry.rbe_right = tmp->tree_entry.rbe_left) != NULL) {
+          tmp->tree_entry.rbe_left->tree_entry.rbe_parent = parent;
+        }
+        if ((tmp->tree_entry.rbe_parent = parent->tree_entry.rbe_parent) != NULL) {
+          if (parent == parent->tree_entry.rbe_parent->tree_entry.rbe_left) {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_left = tmp;
+          } else {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_right = tmp;
+          }
+        } else {
+          head->rbh_root = tmp;
+        }
+        tmp->tree_entry.rbe_left = parent;
+        parent->tree_entry.rbe_parent = tmp;
+        tmp = parent->tree_entry.rbe_right;
+      }
+      if ((tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == 0) &&
+          (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == 0)) {
+        tmp->tree_entry.rbe_color = 1;
+        elm = parent;
+        parent = elm->tree_entry.rbe_parent;
+      } else {
+        if (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == 0) {
+          struct uv_signal_s* oleft;
+          
+          if ((oleft = tmp->tree_entry.rbe_left) != NULL) {
+            oleft->tree_entry.rbe_color = 0;
+          }
+          tmp->tree_entry.rbe_color = 1;
+          oleft = tmp->tree_entry.rbe_left;
+          if ((tmp->tree_entry.rbe_left = oleft->tree_entry.rbe_right) != NULL) {
+            oleft->tree_entry.rbe_right->tree_entry.rbe_parent = tmp;
+          }
+          if ((oleft->tree_entry.rbe_parent = tmp->tree_entry.rbe_parent) != NULL) {
+            if (tmp == tmp->tree_entry.rbe_parent->tree_entry.rbe_left) {
+              tmp->tree_entry.rbe_parent->tree_entry.rbe_left = oleft;
+            } else {
+              tmp->tree_entry.rbe_parent->tree_entry.rbe_right = oleft;
+            }
+          } else {
+            head->rbh_root = oleft;
+          }
+          oleft->tree_entry.rbe_right = tmp;
+          tmp->tree_entry.rbe_parent = oleft;
+          tmp = parent->tree_entry.rbe_right;
+        }
+        tmp->tree_entry.rbe_color = parent->tree_entry.rbe_color;
+        parent->tree_entry.rbe_color = 0;
+        if (tmp->tree_entry.rbe_right) {
+          (tmp->tree_entry.rbe_right)->tree_entry.rbe_color = 0;
+        }
+        tmp = parent->tree_entry.rbe_right;
+        if ((parent->tree_entry.rbe_right = tmp->tree_entry.rbe_left) != NULL) {
+          tmp->tree_entry.rbe_left->tree_entry.rbe_parent = parent;
+        }
+        if ((tmp->tree_entry.rbe_parent = parent->tree_entry.rbe_parent) != NULL) {
+          if (parent == parent->tree_entry.rbe_parent->tree_entry.rbe_left) {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_left = tmp;
+          } else {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_right = tmp;
+          }
+        } else {
+          head->rbh_root = tmp;
+        }
+        tmp->tree_entry.rbe_left = parent;
+        parent->tree_entry.rbe_parent = tmp;
+        elm = head->rbh_root;
+        
+        break;
+      }
+    } else {
+      tmp = parent->tree_entry.rbe_left;
+      if (tmp->tree_entry.rbe_color == 1) {
+        tmp->tree_entry.rbe_color = 0;
+        parent->tree_entry.rbe_color = 1;
+        tmp = parent->tree_entry.rbe_left;
+        if ((parent->tree_entry.rbe_left = tmp->tree_entry.rbe_right) != NULL) {
+          tmp->tree_entry.rbe_right->tree_entry.rbe_parent = parent;
+        }
+
+        if ((tmp->tree_entry.rbe_parent = parent->tree_entry.rbe_parent) != NULL) {
+          if (parent == parent->tree_entry.rbe_parent->tree_entry.rbe_left) {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_left = tmp;
+          } else {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_right = tmp;
+          }
+        } else {
+          head->rbh_root = tmp;
+        }
+        tmp->tree_entry.rbe_right = parent;
+        parent->tree_entry.rbe_parent = tmp;
+        tmp = parent->tree_entry.rbe_left;
+      }
+      if ((tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == 0) &&
+          (tmp->tree_entry.rbe_right == NULL || tmp->tree_entry.rbe_right->tree_entry.rbe_color == 0)) {
+        tmp->tree_entry.rbe_color = 1;
+        elm = parent;
+        parent = elm->tree_entry.rbe_parent;
+      } else {
+        if (tmp->tree_entry.rbe_left == NULL || tmp->tree_entry.rbe_left->tree_entry.rbe_color == 0) {
+          struct uv_signal_s* oright;
+          
+          if ((oright = tmp->tree_entry.rbe_right) != NULL) {
+            oright->tree_entry.rbe_color = 0;
+          }
+          tmp->tree_entry.rbe_color = 1;
+          oright = tmp->tree_entry.rbe_right;
+          if ((tmp->tree_entry.rbe_right = oright->tree_entry.rbe_left) != NULL) {
+            oright->tree_entry.rbe_left->tree_entry.rbe_parent = tmp;
+          }
+          if ((oright->tree_entry.rbe_parent = tmp->tree_entry.rbe_parent) != NULL) {
+            if (tmp == tmp->tree_entry.rbe_parent->tree_entry.rbe_left) {
+              tmp->tree_entry.rbe_parent->tree_entry.rbe_left = oright;
+            } else {
+              tmp->tree_entry.rbe_parent->tree_entry.rbe_right = oright;
+            }
+          } else {
+            head->rbh_root = oright;
+          }
+          oright->tree_entry.rbe_left = tmp;
+          tmp->tree_entry.rbe_parent = oright;
+          tmp = parent->tree_entry.rbe_left;
+        }
+        tmp->tree_entry.rbe_color = parent->tree_entry.rbe_color;
+        parent->tree_entry.rbe_color = 0;
+        if (tmp->tree_entry.rbe_left) {
+          tmp->tree_entry.rbe_left->tree_entry.rbe_color = 0;
+        }
+        tmp = parent->tree_entry.rbe_left;
+        if ((parent->tree_entry.rbe_left = tmp->tree_entry.rbe_right) != NULL) {
+          tmp->tree_entry.rbe_right->tree_entry.rbe_parent = parent;
+        }
+        if ((tmp->tree_entry.rbe_parent = parent->tree_entry.rbe_parent) != NULL) {
+          if (parent == parent->tree_entry.rbe_parent->tree_entry.rbe_left) {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_left = tmp;
+          } else {
+            parent->tree_entry.rbe_parent->tree_entry.rbe_right = tmp;
+          }
+        } else {
+          head->rbh_root = tmp;
+        }
+        tmp->tree_entry.rbe_right = parent;
+        parent->tree_entry.rbe_parent = tmp;
+        elm = head->rbh_root;
+        
+        break;
+      }
+    }
+  }
+  
+  if (elm) {
+    elm->tree_entry.rbe_color = 0;
+  }
+}
+
+
+static struct uv_signal_s* uv__signal_tree_s_RB_REMOVE(
+  struct uv__signal_tree_s* head, 
+  struct uv_signal_s* elm
+) {
+  struct uv_signal_s *child, *parent, *old = elm;
+  int color;
+  
+  if (elm->tree_entry.rbe_left == NULL) {
+    child = elm->tree_entry.rbe_right;
+  } else if (elm->tree_entry.rbe_right == NULL) {
+    child = elm->tree_entry.rbe_left;
+  } else {
+    struct uv_signal_s* left;
+    
+    elm = elm->tree_entry.rbe_right;
+    while ((left = elm->tree_entry.rbe_left) != NULL) {
+      elm = left;
+    }
+    child = elm->tree_entry.rbe_right;
+    parent = elm->tree_entry.rbe_parent;
+    color = elm->tree_entry.rbe_color;
+    if (child) {
+      child->tree_entry.rbe_parent = parent;
+    }
+    if (parent) {
+      if (parent->tree_entry.rbe_left == elm) {
+        parent->tree_entry.rbe_left = child;
+      } else {
+        parent->tree_entry.rbe_right = child;
+      }
+    } else {
+      head->rbh_root = child;
+    }
+    if (elm->tree_entry.rbe_parent == old) parent = elm;
+    elm->tree_entry = old->tree_entry;
+    if (old->tree_entry.rbe_parent) {
+      if (old->tree_entry.rbe_parent->tree_entry.rbe_left == old) {
+        old->tree_entry.rbe_parent->tree_entry.rbe_left = elm;
+      } else {
+        old->tree_entry.rbe_parent->tree_entry.rbe_right = elm;
+      }
+    } else {
+      head->rbh_root = elm;
+    }
+    old->tree_entry.rbe_left->tree_entry.rbe_parent = elm;
+    if (old->tree_entry.rbe_right) {
+      old->tree_entry.rbe_right->tree_entry.rbe_parent = elm;
+    }
+    if (parent) {
+      left = parent;
+      while ((left = left->tree_entry.rbe_parent) != NULL) {}
+    }
+    goto color;
+  }
+  parent = elm->tree_entry.rbe_parent;
+  color = elm->tree_entry.rbe_color;
+  if (child) {
+    child->tree_entry.rbe_parent = parent;
+  }
+  if (parent) {
+    if (parent->tree_entry.rbe_left == elm) {
+      parent->tree_entry.rbe_left = child;
+    } else {
+      parent->tree_entry.rbe_right = child;
+    }
+  } else {
+    head->rbh_root = child;
+  }
+color:
+  if (color == 0) {
+    uv__signal_tree_s_RB_REMOVE_COLOR(head, parent, child);
+  }
+
+  return (old);
+}
+
+
+static struct uv_signal_s* uv__signal_tree_s_RB_INSERT(
+  struct uv__signal_tree_s* head, 
+  struct uv_signal_s* elm
+) {
+  struct uv_signal_s* tmp;
+  struct uv_signal_s* parent = NULL;
+  
+  int comp = 0;
+  tmp = head->rbh_root;
+  
+  while (tmp) {
+    parent = tmp;
+    comp = uv__signal_compare(elm, parent);
+    if (comp < 0) {
+      tmp = tmp->tree_entry.rbe_left;
+    } else if (comp > 0) {
+      tmp = tmp->tree_entry.rbe_right;
+    } else {
+      return tmp;
+    }
+  }
+  elm->tree_entry.rbe_parent = parent;
+  elm->tree_entry.rbe_left = elm->tree_entry.rbe_right = NULL;
+  elm->tree_entry.rbe_color = 1;
+  if (parent != NULL) {
+    if (comp < 0) {
+      parent->tree_entry.rbe_left = elm;
+    } else {
+      parent->tree_entry.rbe_right = elm;
+    }
+  } else {
+    head->rbh_root = elm;
+  }
+  
+  uv__signal_tree_s_RB_INSERT_COLOR(head, elm);
+  
+  return NULL;
+}
+
+
+static struct uv_signal_s* uv__signal_tree_s_RB_NFIND(
+  struct uv__signal_tree_s* head, 
+  struct uv_signal_s* elm
+) {
+  struct uv_signal_s* tmp = head->rbh_root;
+  struct uv_signal_s* res = NULL;
+  int comp;
+  
+  while (tmp) {
+    comp = uv__signal_compare(elm, tmp);
+    if (comp < 0) {
+      res = tmp;
+      tmp = tmp->tree_entry.rbe_left;
+    } else if (comp > 0) {
+      tmp = tmp->tree_entry.rbe_right;
+    } else {
+      return tmp;
+    }
+  }
+  
+  return res;
+}
+
+
+static struct uv_signal_s* uv__signal_tree_s_RB_NEXT(
+  struct uv_signal_s* elm
+) {
+  if (elm->tree_entry.rbe_right) {
+    elm = elm->tree_entry.rbe_right;
+    while (elm->tree_entry.rbe_left) {
+      elm = elm->tree_entry.rbe_left;
+    }
+  } else {
+    if (elm->tree_entry.rbe_parent && (elm == elm->tree_entry.rbe_parent->tree_entry.rbe_left)) {
+      elm = elm->tree_entry.rbe_parent;
+    } else {
+      while (elm->tree_entry.rbe_parent && (elm == elm->tree_entry.rbe_parent->tree_entry.rbe_right)) {
+        elm = elm->tree_entry.rbe_parent;
+      }
+      elm = elm->tree_entry.rbe_parent;
+    }
+  }
+  
+  return elm;
+}
+
 
 static void uv__signal_global_reinit(void);
 
@@ -133,7 +580,7 @@ static uv_signal_t* uv__signal_first_handle(int signum) {
   lookup.flags = 0;
   lookup.loop = NULL;
 
-  handle = RB_NFIND(uv__signal_tree_s, &uv__signal_tree, &lookup);
+  handle = uv__signal_tree_s_RB_NFIND(&uv__signal_tree, &lookup);
 
   if (handle != NULL && handle->signum == signum) {
     return handle;
@@ -158,7 +605,7 @@ static void uv__signal_handler(int signum) {
 
   for (handle = uv__signal_first_handle(signum);
        handle != NULL && handle->signum == signum;
-       handle = RB_NEXT(uv__signal_tree_s, &uv__signal_tree, handle)) {
+       handle = uv__signal_tree_s_RB_NEXT(handle)) {
     int r;
 
     msg.signum = signum;
@@ -329,7 +776,7 @@ static int uv__signal_start(uv_signal_t* handle, uv_signal_cb signal_cb, int sig
     handle->flags |= UV_SIGNAL_ONE_SHOT;
   }
 
-  RB_INSERT(uv__signal_tree_s, &uv__signal_tree, handle);
+  uv__signal_tree_s_RB_INSERT(&uv__signal_tree, handle);
 
   uv__signal_unlock_and_unblock(&saved_sigmask);
 
@@ -467,7 +914,7 @@ static void uv__signal_stop(uv_signal_t* handle) {
 
   uv__signal_block_and_lock(&saved_sigmask);
 
-  removed_handle = RB_REMOVE(uv__signal_tree_s, &uv__signal_tree, handle);
+  removed_handle = uv__signal_tree_s_RB_REMOVE(&uv__signal_tree, handle);
   assert(removed_handle == handle);
   (void) removed_handle;
 

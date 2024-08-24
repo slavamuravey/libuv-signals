@@ -10,6 +10,9 @@
         "type_traits": "c",
         "utility": "c",
         "pthread.h": "c",
-        "signal.h": "c"
+        "signal.h": "c",
+        "random": "c",
+        "queue.h": "c",
+        "stddef.h": "c"
     }
 }
