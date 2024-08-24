@@ -73,7 +73,6 @@ static void maybe_resize(uv_loop_t* loop, unsigned int len) {
 void uv__io_init(uv__io_t* w, uv__io_cb cb, int fd) {
   assert(cb != NULL);
   assert(fd >= -1);
-  uv__queue_init(&w->pending_queue);
   uv__queue_init(&w->watcher_queue);
   w->cb = cb;
   w->fd = fd;
