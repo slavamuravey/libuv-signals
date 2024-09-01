@@ -62,14 +62,13 @@ void sigint_handler_3(uv_signal_t *handle, int signum)
 int main()
 {
     uv_loop_t loop;
+    uv_signal_t sigusr1_1, sigusr1_2, sigusr1_3;
+    uv_signal_t sigusr2_1, sigusr2_2, sigusr2_3;
+    uv_signal_t sigint_1, sigint_2, sigint_3;
 
     printf("PID %d\n", getpid());
     
     uv_loop_init(&loop);
-
-    uv_signal_t sigusr1_1, sigusr1_2, sigusr1_3;
-    uv_signal_t sigusr2_1, sigusr2_2, sigusr2_3;
-    uv_signal_t sigint_1, sigint_2, sigint_3;
     
     /* SIGUSR1 */
     uv_signal_init(&loop, &sigusr1_1);
